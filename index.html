@@ -31,7 +31,8 @@
         </h1>
 
         <p v-if="device && batteryExpirationDate">
-            Estimation when the battery will run out: <strong>{{batteryExpirationDate.format('YYYY-MM-DD HH:mm:ss')}} ({{moment(batteryExpirationDate).fromNow()}})</strong>
+            Estimation when the battery will run out: <strong>{{batteryExpirationDate.format('YYYY-MM-DD HH:mm:ss')}}
+                ({{moment(batteryExpirationDate).fromNow()}})</strong>
         </p>
 
         <div class="card" v-if="device && lastPoint">
@@ -57,7 +58,7 @@
                             }],
                             yAxes: [{
                                 ticks: {
-                                    suggestedMin: 0,    
+                                    suggestedMin: 0,
                                     suggestedMax: 100,
                                 }
                             }]
@@ -173,11 +174,17 @@
                             characteristic.addEventListener('characteristicvaluechanged', this.handleBatteryLevelChanged)
                             characteristic.startNotifications()
                             this.batteryLevelCharacteristic = characteristic
-
+                            return characteristic.readValue()
+                        }).then(value => {
+                            const batteryLevel = value.getUint8(0);
+                            this.addDataPoint(batteryLevel)
+                        }).catch(error => {
+                            console.error(error)
                         })
                 }
             }
         })
     </script>
 </body>
+
 </html>
