@@ -88,7 +88,7 @@
                 batteryExpirationDate() {
                     if (this.dataPoints.length < 2) return
 
-                    const pointToCompareWith = this.dataPoints.find(point => point.batteryLevel !== this.lastPoint.batteryLevel)
+                    const pointToCompareWith = [...this.dataPoints].reverse().find(point => point.batteryLevel !== this.lastPoint.batteryLevel)
 
                     if (!pointToCompareWith) return
 
