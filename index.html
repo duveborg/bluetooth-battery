@@ -35,6 +35,10 @@
                 ({{moment(batteryExpirationDate).fromNow()}})</strong>
         </p>
 
+        <p v-if="device && lastPoint">
+            Last update: <strong>{{moment(lastPoint.time).fromNow()}}</strong>
+        </p>
+
         <div class="card" v-if="device && lastPoint">
             <div class="card-body">
                 <chart :chart-data="chartData" />
