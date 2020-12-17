@@ -36,7 +36,7 @@
         </p>
 
         <p v-if="device && lastPoint">
-            Last update: <strong>{{moment(lastPoint.time).fromNow()}}</strong>
+            Last update: <strong>{{moment(lastPoint.time).format('YYYY-MM-DD HH:mm:ss')}}</strong>
         </p>
 
         <div class="card" v-if="device && lastPoint">
@@ -156,7 +156,10 @@
                         this.batteryLevelCharacteristic.removeEventListener('characteristicvaluechanged', this.handleBatteryLevelChanged);
                     }
 
-                    navigator.bluetooth.requestDevice({ filters: [{ services: ['battery_service'] }] })
+                    navigator.bluetooth.requestDevice({
+                        acceptAllDevices: true,
+                        optionalServices: ['battery_service']
+                    })
                         .then(device => {
                             this.device = device
                             const savedPoints = localStorage.getItem(this.device.name)
@@ -176,7 +179,9 @@
                         .then(characteristic => {
                             // Set up event listener for when characteristic value changes.
                             characteristic.addEventListener('characteristicvaluechanged', this.handleBatteryLevelChanged)
-                            characteristic.startNotifications()
+                            characteristic.startNotifications().catch(error => {
+                                console.error(error)
+                            })
                             this.batteryLevelCharacteristic = characteristic
                             return characteristic.readValue()
                         }).then(value => {
