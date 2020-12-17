@@ -1,0 +1,183 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bluetooth battery level check</title>
+
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.12/dist/vue.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/2.7.1/Chart.bundle.min.js"></script>
+    <script src="https://unpkg.com/vue-chartjs/dist/vue-chartjs.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/moment.js/2.29.1/moment.min.js"
+        integrity="sha512-qTXRIMyZIFb8iQcfjXWCO8+M5Tbc38Qi5WzdPOYZHIlZpzBHG3L3by84BBBOiRGiEb7KKtAOAs5qYdUiZiQNNQ=="
+        crossorigin="anonymous"></script>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0/css/bootstrap.min.css"
+        integrity="sha384-Gn5384xqQ1aoWXA+058RXPxPg6fy4IWvTNh0E263XmFcJlSAwiGgFAW/dAiS6JXm" crossorigin="anonymous">
+
+</head>
+
+<body>
+    <div class="container" id="app">
+
+        <div class="text-center my-5">
+            <button class="btn btn-primary" @click="connect">Connect device</button>
+        </div>
+
+        <p v-if="device">Device: <strong>{{device.name}}</strong></p>
+
+        <h1 class="mb-3" v-if="dataPoints.length">
+            Battery level: <span class="badge badge-primary">{{lastPoint.batteryLevel}}%</span>
+        </h1>
+
+        <p v-if="device && batteryExpirationDate">
+            Estimation when the battery will run out: <strong>{{batteryExpirationDate.format('YYYY-MM-DD HH:mm:ss')}} ({{moment(batteryExpirationDate).fromNow()}})</strong>
+        </p>
+
+        <div class="card" v-if="device && lastPoint">
+            <div class="card-body">
+                <chart :chart-data="chartData" />
+            </div>
+        </div>
+    </div>
+
+    <script>
+        Vue.component('chart', {
+            extends: VueChartJs.Line,
+            mixins: [VueChartJs.mixins.reactiveProp],
+            data() {
+                return {
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            xAxes: [{
+                                type: 'time',
+                                distribution: 'linear'
+                            }],
+                            yAxes: [{
+                                ticks: {
+                                    suggestedMin: 0,    
+                                    suggestedMax: 100,
+                                }
+                            }]
+                        }
+                    }
+                }
+            },
+            mounted() {
+                this.renderChart(this.chartData, this.options)
+            }
+        })
+
+        new Vue({
+            el: "#app",
+            data() {
+                return {
+                    moment,
+                    dataPoints: [],
+                    device: null,
+                    batteryLevelCharacteristic: null
+                }
+            },
+            computed: {
+                lastPoint() {
+                    return this.dataPoints[this.dataPoints.length - 1]
+                },
+                batteryExpirationDate() {
+                    if (this.dataPoints.length < 2) return
+
+                    const pointToCompareWith = this.dataPoints.find(point => point.batteryLevel !== this.lastPoint.batteryLevel)
+
+                    if (!pointToCompareWith) return
+
+                    const timeDiff = moment(this.lastPoint.time).diff(pointToCompareWith.time)
+                    const batteryDiff = pointToCompareWith.batteryLevel - this.lastPoint.batteryLevel
+                    const timeLeft = (timeDiff / batteryDiff) * this.lastPoint.batteryLevel
+
+                    if (timeLeft < 0) return
+
+                    return moment().add(timeLeft, 'ms')
+                },
+                chartData() {
+                    const datasets = [{
+                        label: 'History',
+                        backgroundColor: '#4285F4',
+                        pointBackgroundColor: '#214c39',
+                        data: this.dataPoints.map(point => ({
+                            t: point.time,
+                            y: point.batteryLevel
+                        }))
+                    }]
+
+                    if (this.batteryExpirationDate) {
+                        datasets.push({
+                            label: 'Estimation',
+                            backgroundColor: '#F4B400',
+                            data: [
+                                {
+                                    t: this.lastPoint.time,
+                                    y: this.lastPoint.batteryLevel
+                                },
+                                {
+                                    t: this.batteryExpirationDate,
+                                    y: 0
+                                }
+                            ]
+                        })
+                    }
+
+                    return {
+                        datasets
+                    }
+                }
+            },
+            methods: {
+                addDataPoint(batteryLevel) {
+                    this.dataPoints.push({
+                        time: new Date(),
+                        batteryLevel
+                    })
+
+                    localStorage.setItem(this.device.name, JSON.stringify(this.dataPoints))
+                },
+                handleBatteryLevelChanged() {
+                    const batteryLevel = event.target.value.getUint8(0);
+                    console.log('Battery percentage is ' + batteryLevel)
+                    this.addDataPoint(batteryLevel)
+                },
+                connect() {
+                    if (this.batteryLevelCharacteristic) {
+                        this.batteryLevelCharacteristic.removeEventListener('characteristicvaluechanged', this.handleBatteryLevelChanged);
+                    }
+
+                    navigator.bluetooth.requestDevice({ filters: [{ services: ['battery_service'] }] })
+                        .then(device => {
+                            this.device = device
+                            const savedPoints = localStorage.getItem(this.device.name)
+                            if (savedPoints) {
+                                this.dataPoints = JSON.parse(savedPoints)
+                            }
+                            return device.gatt.connect()
+                        })
+                        .then(server => {
+                            // Getting Battery Service…
+                            return server.getPrimaryService('battery_service')
+                        })
+                        .then(service => {
+                            // Getting Battery Level Characteristic…
+                            return service.getCharacteristic('battery_level')
+                        })
+                        .then(characteristic => {
+                            // Set up event listener for when characteristic value changes.
+                            characteristic.addEventListener('characteristicvaluechanged', this.handleBatteryLevelChanged)
+                            characteristic.startNotifications()
+                            this.batteryLevelCharacteristic = characteristic
+
+                        })
+                }
+            }
+        })
+    </script>
+</body>
+</html>
